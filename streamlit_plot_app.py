@@ -14,7 +14,7 @@ uploaded_file = st.sidebar.file_uploader("Upload CSV file", type=['csv'])
 
 if uploaded_file is not None:
     # Load dataframe
-    df = pd.read_csv(uploaded_file)
+    df = pd.read_csv("us_counties_npp_change_2002_2022.csv")
     
     st.sidebar.success(f"File loaded: {uploaded_file.name}")
     st.sidebar.write(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
