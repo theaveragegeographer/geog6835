@@ -1,3 +1,11 @@
 streamlit
 pandas
+streamlit
+pandas
+geopandas
+leafmap
+matplotlib
+mapclassify
+requests
+folium
 numpy
