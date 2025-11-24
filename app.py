@@ -8,33 +8,43 @@ from io import BytesIO
 import zipfile
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title='Utah Vegetation Dashboard', layout='wide')
+st.set_page_config(page_title='Vegetation Dashboard', layout='wide')
 
-st.title('Utah Vegetation Analysis Dashboard')
+st.title('Vegetation Productivity Dashboard')
 st.markdown("""
-This dashboard visualizes changes in vegetation health between **2002** and **2022**.
-Use the sidebar to switch between **NPP** (Productivity) and **NDVI** (Greenness).
+This dashboard visualizes changes in vegetation health (NPP & NDVI) between **2002** and **2022**.
 """)
 
-# --- SIDEBAR CONFIGURATION ---
+# --- CONFIGURATION & HELPERS ---
+# This dictionary maps the ID numbers in your file to real names
+FIPS_MAP = {
+    4: "Arizona",
+    8: "Colorado",
+    16: "Idaho",
+    32: "Nevada",
+    35: "New Mexico",
+    49: "Utah",
+    56: "Wyoming"
+}
+
 st.sidebar.title('Configuration')
 
-# INTERACTIVE ELEMENT 1: Radio Button (Metric Selector)
+# 1. METRIC SELECTOR
 metric_type = st.sidebar.radio(
-    "Select Metric to Analyze:",
+    "Select Metric:",
     ["Net Primary Productivity (NPP)", "Vegetation Index (NDVI)"]
 )
 
-# INTERACTIVE ELEMENT 2: Color Pickers
+# 2. COLOR PICKERS
 st.sidebar.write("### Chart Colors")
 col1, col2 = st.sidebar.columns(2)
 color1 = col1.color_picker('2002', "#86BFE0")
 color2 = col2.color_picker('2022', "#C66762")
 
-# --- DATA LOADING (Cached) ---
+# --- DATA LOADING ---
 @st.cache_data
 def load_data():
-    # 1. Load Map Shapes
+    # Load Map Shapes
     tiger_url = "https://www2.census.gov/geo/tiger/TIGER2023/COUNTY/tl_2023_us_county.zip"
     try:
         r = requests.get(tiger_url)
@@ -46,15 +56,19 @@ def load_data():
     except:
         return gpd.GeoDataFrame(), pd.DataFrame()
 
-    # 2. Load CSV Data
+    # Load CSV
     try:
         df = pd.read_csv("utah_vegetation_stats.csv")
         df['STATEFP'] = df['STATEFP'].astype(str).str.zfill(2)
         df['GEOID'] = df['GEOID'].astype(str).str.zfill(5)
         
-        # Calculate Changes for both metrics
+        # Calculate change columns
         df['NPP_Change'] = df['NPP_2022'] - df['NPP_2002']
         df['NDVI_Change'] = df['NDVI_2022'] - df['NDVI_2002']
+        
+        # Create a "State Name" column for the dropdown
+        # We convert the ID (e.g. "49") back to integer to match our dictionary keys
+        df['State_Name'] = df['STATEFP'].astype(int).map(FIPS_MAP)
         
         return gdf, df
     except:
@@ -66,44 +80,50 @@ map_data, stats_data = load_data()
 
 if not stats_data.empty and not map_data.empty:
     
-    # 1. Determine which columns to use based on Radio Button
-    if "NPP" in metric_type:
-        col_02 = 'NPP_2002'
-        col_22 = 'NPP_2022'
-        col_change = 'NPP_Change'
-        label = "NPP (Kilo Tonnes)"
-    else:
-        col_02 = 'NDVI_2002'
-        col_22 = 'NDVI_2022'
-        col_change = 'NDVI_Change'
-        label = "NDVI (Index Value)"
-
-    # INTERACTIVE ELEMENT 3: State Dropdown
-    state_list = sorted(stats_data['STATEFP'].unique())
-    selected_state = st.sidebar.selectbox('Select State ID', state_list)
-
-    # Filter Data
-    state_stats = stats_data[stats_data['STATEFP'] == selected_state]
-    state_map = map_data[map_data['STATEFP'] == selected_state]
+    # 3. STATE SELECTOR (Now with Names!)
+    # Get list of state names present in the data
+    available_states = sorted(stats_data['State_Name'].dropna().unique())
     
-    # Merge for Mapping
+    # Set default to "Utah" if available, otherwise first in list
+    default_index = available_states.index("Utah") if "Utah" in available_states else 0
+    
+    selected_state_name = st.sidebar.selectbox(
+        'Select a State', 
+        available_states, 
+        index=default_index
+    )
+
+    # Filter data by the Name instead of the ID
+    state_stats = stats_data[stats_data['State_Name'] == selected_state_name]
+    # Get the ID for the map filter
+    selected_state_id = state_stats['STATEFP'].iloc[0]
+    state_map = map_data[map_data['STATEFP'] == selected_state_id]
+    
+    # Merge
     final_data = state_map.merge(state_stats, on='GEOID', how='inner')
 
-    # LAYOUT: Create two tabs for organized visualization
-    tab1, tab2 = st.tabs(["🗺️ Geospatial Map", "📊 Statistical Chart"])
+    # Configure columns based on metric selection
+    if "NPP" in metric_type:
+        c1, c2, c_change = 'NPP_2002', 'NPP_2022', 'NPP_Change'
+        ylabel = "NPP (Kilo Tonnes)"
+    else:
+        c1, c2, c_change = 'NDVI_2002', 'NDVI_2022', 'NDVI_Change'
+        ylabel = "NDVI Value"
+
+    # --- TABS FOR VISUALIZATION ---
+    tab1, tab2 = st.tabs(["🗺️ Map View", "📊 Chart View"])
 
     with tab1:
-        st.subheader(f"Change in {metric_type} (2002-2022)")
-        m = leafmap.Map(draw_control=False, measure_control=False, fullscreen_control=False)
-        m.add_basemap('CartoDB.Positron')
-        
+        st.subheader(f"{selected_state_name}: {metric_type} Change")
         try:
+            m = leafmap.Map(draw_control=False, measure_control=False, fullscreen_control=False)
+            m.add_basemap('CartoDB.Positron')
             m.add_data(
                 final_data,
-                column=col_change,
+                column=c_change,
                 scheme="Quantiles",
                 cmap="RdYlGn",
-                layer_name=f"{metric_type} Change",
+                layer_name="Change",
                 info_mode="on_click"
             )
             m.to_streamlit(height=550)
@@ -111,27 +131,23 @@ if not stats_data.empty and not map_data.empty:
             st.error(f"Map Error: {e}")
 
     with tab2:
-        st.subheader(f"Comparison: 2002 vs 2022")
+        st.subheader(f"County Comparison: 2002 vs 2022")
+        fig, ax = plt.subplots(figsize=(10, 5))
         
-        # Sort data for cleaner chart
+        # Sort by county name
         chart_df = state_stats.sort_values('NAME')
         
-        fig, ax = plt.subplots(figsize=(10, 5))
         chart_df.plot(
             kind='bar',
             ax=ax,
             x='NAME',
-            y=[col_02, col_22],
+            y=[c1, c2],
             color=[color1, color2],
             width=0.8
         )
-        ax.set_ylabel(label)
-        ax.set_title(f"{metric_type} by County")
+        ax.set_ylabel(ylabel)
         ax.set_xticklabels(chart_df['NAME'], rotation=90)
         st.pyplot(fig)
-        
-        st.write("### Raw Data Statistics")
-        st.dataframe(state_stats[['NAME', col_02, col_22, col_change]].describe())
 
 else:
-    st.error("Data could not load. Please check 'utah_vegetation_stats.csv' is in GitHub.")
+    st.error("Data failed to load. Please check CSV file in GitHub.")
