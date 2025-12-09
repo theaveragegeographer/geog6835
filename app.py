@@ -85,4 +85,7 @@ def unique_values(geojson_obj, field):
 def filter_geojson(geojson_obj, field, allowed_values):
     feats = [
         f
-        for f in geojson_obj.get("features_
+        for f in geojson_obj.get("features", [])
+        if f.get("properties", {}).get(field) in allowed_values
+    ]
+    return {**geojson_obj, "features": feats}
