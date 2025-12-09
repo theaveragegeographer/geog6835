@@ -7,7 +7,7 @@ import requests
 # -------------------------
 
 st.set_page_config(layout="wide", page_title="Geopolitics & Heretics Dashboard")
-st.title("Geopolitics, Heretics, and Military Geography")
+st.title("Geopolitics, Ethnic Groups, and Military Geography of Africa and the Western Balkans")
 
 st.markdown(
     "Use the controls on the left to toggle defensive terrain layers and "
@@ -33,10 +33,7 @@ GREG_URL = (
     "GREG_Geo_referencing_of_Ethnic_Groups_/FeatureServer/0"
 )
 
-HERETICS_URL = (
-    "https://services8.arcgis.com/UN2BoTelitQIJWcd/arcgis/rest/services/"
-    "Heretics_Southern_Europe/FeatureServer/0"
-)
+
 
 # Field used for GREG filtering
 GREG_FIELD = "G1SHORTNAM"
@@ -90,7 +87,7 @@ def filter_geojson(geojson_obj, field, allowed_values):
 
 
 # -------------------------
-# 3) Fetch GREG once (Heretics will be added directly as a layer)
+# 3) Fetch GREG once
 # -------------------------
 
 greg_geojson = fetch_geojson(GREG_URL)
@@ -131,9 +128,7 @@ else:
     st.sidebar.warning("Could not load GREG groups; showing none.")
     selected_greg = []
 
-# Heretics toggle (no filtering for now)
-st.sidebar.subheader("Heretics – Southern Europe")
-show_heretics = st.sidebar.checkbox("Show Heretics layer", value=True)
+
 
 
 # -------------------------
@@ -158,12 +153,6 @@ if selected_greg:
     if greg_filtered["features"]:
         m.add_geojson(greg_filtered, layer_name="GREG (filtered)")
 
-# Add Heretics as a normal AGOL feature layer
-if show_heretics:
-    m.add_arcgis_feature_layer(
-        HERETICS_URL,
-        layer_name="Heretics – Southern Europe",
-    )
 
 # Adjust view and render
 m.zoom_to_layers()
