@@ -138,12 +138,41 @@ st.sidebar.info(
 )
 
 # -------------------------
+# 5) Map + filtered GREG
+# -------------------------
+
+# Start with a broad global view; user can pan/zoom
+m = leafmap.Map(center=[20, 10], zoom=2)
+
+# Tile layer
+tile_url = TILE_LAYERS[selected_tile_name]
+if tile_url:
+    m.add_tile_layer(
+        url=tile_url,
+        name=selected_tile_name,
+        opacity=tile_opacity,
+        attribution="ArcGIS Online",
+    )
+
+# Compute filtered GREG once so we can reuse it
+greg_filtered = {"type": "FeatureCollection", "features": []}
+has_features = False
+
+if selected_greg:
+    greg_filtered = filter_geojson(greg_geojson, GREG_FIELD, selected_greg)
+    has_features = bool(greg_filtered.get("features"))
+    if has_features:
+        m.add_geojson(greg_filtered, layer_name="GREG (filtered)")
+
+m.to_streamlit(height=700)
+
+# -------------------------
 # 6) Simple statistics panel
 # -------------------------
 
 st.markdown("### Summary statistics for selected groups")
 
-if selected_greg and greg_filtered["features"]:
+if has_features:
     # Count features by group name
     rows = []
     for f in greg_filtered["features"]:
@@ -167,34 +196,3 @@ if selected_greg and greg_filtered["features"]:
     st.bar_chart(df_counts.set_index("Group")["Feature count"])
 else:
     st.info("Select at least one group in the sidebar to see summary statistics.")
-
-# -------------------------
-# 5) Map
-# -------------------------
-
-# Start with a broad global view; user can pan/zoom
-m = leafmap.Map(center=[20, 10], zoom=2)
-
-# Tile layer
-tile_url = TILE_LAYERS[selected_tile_name]
-if tile_url:
-    m.add_tile_layer(
-        url=tile_url,
-        name=selected_tile_name,
-        opacity=tile_opacity,
-        attribution="ArcGIS Online",
-    )
-
-# Filter + add GREG
-if selected_greg:
-    greg_filtered = filter_geojson(greg_geojson, GREG_FIELD, selected_greg)
-    if greg_filtered["features"]:
-        m.add_geojson(greg_filtered, layer_name="GREG (filtered)")
-
-m.to_streamlit(height=700)
-
-st.caption(
-    "Tile layers = your predictive/defensive military geography from ArcGIS Online. "
-    "GREG groups (G1SHORTNAM) are filtered in the sidebar and overlaid on top. "
-    "Pan and zoom the map to explore how ethnic geographies align with defensible terrain."
-)
