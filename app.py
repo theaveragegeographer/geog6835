@@ -2,6 +2,10 @@ import streamlit as st
 import leafmap.foliumap as leafmap
 import requests
 
+# -------------------------
+# Page config
+# -------------------------
+
 st.set_page_config(layout="wide", page_title="Geopolitics & Heretics Dashboard")
 st.title("Geopolitics, Heretics, and Military Geography")
 
@@ -16,10 +20,12 @@ st.markdown(
 
 TILE_LAYERS = {
     "None": None,
-    "African Great Lakes – Defensive Military Geography": 
-        "https://tiles.arcgis.com/tiles/UN2BoTelitQIJWcd/arcgis/rest/services/African_Great_Lakes_Defensive_Military_Geography/MapServer",
-    "Western Balkans – Predictive Military Geography": 
-        "https://tiles.arcgis.com/tiles/UN2BoTelitQIJWcd/arcgis/rest/services/Predictive_Military_Geography_of_the_ex_Yugoslavia_and_Western_Balkans_WTL1/MapServer",
+    "African Great Lakes – Defensive Military Geography":
+        "https://tiles.arcgis.com/tiles/UN2BoTelitQIJWcd/arcgis/rest/services/"
+        "African_Great_Lakes_Defensive_Military_Geography/MapServer",
+    "Western Balkans – Predictive Military Geography":
+        "https://tiles.arcgis.com/tiles/UN2BoTelitQIJWcd/arcgis/rest/services/"
+        "Predictive_Military_Geography_of_the_ex_Yugoslavia_and_Western_Balkans_WTL1/MapServer",
 }
 
 GREG_URL = (
@@ -32,33 +38,44 @@ HERETICS_URL = (
     "Heretics_Southern_Europe/FeatureServer/0"
 )
 
-# Your actual filter fields
+# Field used for GREG filtering
 GREG_FIELD = "G1SHORTNAM"
-HERETICS_FIELD = "MERGE_SRC"
 
 
 # -------------------------
-# Helper functions
+# 2) Helper functions
 # -------------------------
 
 @st.cache_data
 def fetch_geojson(feature_url: str):
-    """Download full layer as GeoJSON from AGOL FeatureServer."""
+    """Download full layer as GeoJSON from an AGOL FeatureServer layer."""
     query_url = f"{feature_url}/query"
     params = {
         "where": "1=1",
         "outFields": "*",
         "f": "geojson",
     }
-    r = requests.get(query_url, params=params)
-    r.raise_for_status()
+
+    try:
+        r = requests.get(query_url, params=params, timeout=30)
+    except Exception as e:
+        st.error(f"Error connecting to {feature_url}: {e}")
+        return {"type": "FeatureCollection", "features": []}
+
+    if not r.ok:
+        st.error(
+            f"Error fetching layer from {feature_url}\n"
+            f"Status code: {r.status_code}"
+        )
+        return {"type": "FeatureCollection", "features": []}
+
     return r.json()
 
 
 def unique_values(geojson_obj, field):
     vals = set()
-    for feat in geojson_obj["features"]:
-        val = feat["properties"].get(field)
+    for feat in geojson_obj.get("features", []):
+        val = feat.get("properties", {}).get(field)
         if val not in [None, ""]:
             vals.add(val)
     return sorted(vals)
@@ -66,31 +83,31 @@ def unique_values(geojson_obj, field):
 
 def filter_geojson(geojson_obj, field, allowed_values):
     feats = [
-        f for f in geojson_obj["features"]
-        if f["properties"].get(field) in allowed_values
+        f for f in geojson_obj.get("features", [])
+        if f.get("properties", {}).get(field) in allowed_values
     ]
     return {**geojson_obj, "features": feats}
 
 
-# Fetch layers once
-greg_geojson = fetch_geojson(GREG_URL)
-heretics_geojson = fetch_geojson(HERETICS_URL)
+# -------------------------
+# 3) Fetch GREG once (Heretics will be added directly as a layer)
+# -------------------------
 
+greg_geojson = fetch_geojson(GREG_URL)
 greg_values = unique_values(greg_geojson, GREG_FIELD)
-heretics_values = unique_values(heretics_geojson, HERETICS_FIELD)
 
 
 # -------------------------
-# 2) Sidebar controls
+# 4) Sidebar controls
 # -------------------------
 
 st.sidebar.header("Layer Controls")
 
-# Tile layer selection
+# Tile layer choice
 selected_tile_name = st.sidebar.radio(
     "Defensive Terrain Tile Layer:",
     list(TILE_LAYERS.keys()),
-    index=1
+    index=1,  # default to African Great Lakes
 )
 
 tile_opacity = st.sidebar.slider(
@@ -102,22 +119,25 @@ st.sidebar.markdown("---")
 
 # GREG filter
 st.sidebar.subheader("GREG – Ethnic Groups")
-selected_greg = st.sidebar.multiselect(
-    f"Filter by {GREG_FIELD}:",
-    greg_values,
-    default=greg_values[:10] if len(greg_values) > 10 else greg_values
-)
 
-# Heretics filter
+if greg_values:
+    default_greg = greg_values[:10] if len(greg_values) > 10 else greg_values
+    selected_greg = st.sidebar.multiselect(
+        f"Filter by {GREG_FIELD}:",
+        greg_values,
+        default=default_greg,
+    )
+else:
+    st.sidebar.warning("Could not load GREG groups; showing none.")
+    selected_greg = []
+
+# Heretics toggle (no filtering for now)
 st.sidebar.subheader("Heretics – Southern Europe")
-selected_heretics = st.sidebar.multiselect(
-    f"Filter by {HERETICS_FIELD}:",
-    heretics_values,
-    default=heretics_values
-)
+show_heretics = st.sidebar.checkbox("Show Heretics layer", value=True)
+
 
 # -------------------------
-# 3) MAP
+# 5) Map construction
 # -------------------------
 
 m = leafmap.Map(center=[30, 10], zoom=2)
@@ -129,27 +149,29 @@ if tile_url:
         url=tile_url,
         name=selected_tile_name,
         opacity=tile_opacity,
-        attribution="ArcGIS Online"
+        attribution="ArcGIS Online",
     )
 
 # Filter + add GREG
 if selected_greg:
     greg_filtered = filter_geojson(greg_geojson, GREG_FIELD, selected_greg)
-    m.add_geojson(greg_filtered, layer_name="GREG (filtered)")
+    if greg_filtered["features"]:
+        m.add_geojson(greg_filtered, layer_name="GREG (filtered)")
 
-# Filter + add Heretics
-if selected_heretics:
-    heretics_filtered = filter_geojson(heretics_geojson, HERETICS_FIELD, selected_heretics)
-    m.add_geojson(heretics_filtered, layer_name="Heretics (filtered)")
+# Add Heretics as a normal AGOL feature layer
+if show_heretics:
+    m.add_arcgis_feature_layer(
+        HERETICS_URL,
+        layer_name="Heretics – Southern Europe",
+    )
 
-# Adjust view
+# Adjust view and render
 m.zoom_to_layers()
-
-# Render
 m.to_streamlit(height=700)
 
 st.caption(
     "Tile layers = your predictive/defensive military geography from ArcGIS Online. "
-    "Use the filters to explore how ethnic and heretical groups in different historical periods "
-    "map onto defensible terrain."
+    "GREG is filtered by short group name (G1SHORTNAM). "
+    "Heretical communities in Southern Europe are shown as an overlay. "
+    "Use the sidebar and map layer controls to explore how groups map onto defensible terrain."
 )
