@@ -30,6 +30,10 @@ TILE_LAYERS = {
     ),
 }
 
+GREG_URL = (
+    "https://services7.arcgis.com/iEMmryaM5E3wkdnU/arcgis/rest/services/"
+    "GREG_Geo_referencing_of_Ethnic_Groups_/FeatureServer/0"
+)
 
 GREG_FIELD = "G1SHORTNAM"  # field to filter on
 
