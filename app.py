@@ -1,153 +1,155 @@
 import streamlit as st
-import geopandas as gpd
-import pandas as pd
-import matplotlib.pyplot as plt
 import leafmap.foliumap as leafmap
 import requests
-from io import BytesIO
-import zipfile
 
-# --- PAGE CONFIGURATION ---
-st.set_page_config(page_title='Vegetation Dashboard', layout='wide')
+st.set_page_config(layout="wide", page_title="Geopolitics & Heretics Dashboard")
+st.title("Geopolitics, Heretics, and Military Geography")
 
-st.title('Vegetation Productivity Dashboard')
-st.markdown("""
-This dashboard visualizes changes in vegetation health (NPP & NDVI) between **2002** and **2022**.
-""")
-
-# --- CONFIGURATION & HELPERS ---
-# This dictionary maps the ID numbers in your file to real names
-FIPS_MAP = {
-    4: "Arizona",
-    8: "Colorado",
-    16: "Idaho",
-    32: "Nevada",
-    35: "New Mexico",
-    49: "Utah",
-    56: "Wyoming"
-}
-
-st.sidebar.title('Configuration')
-
-# 1. METRIC SELECTOR
-metric_type = st.sidebar.radio(
-    "Select Metric:",
-    ["Net Primary Productivity (NPP)", "Vegetation Index (NDVI)"]
+st.markdown(
+    "Use the controls on the left to toggle defensive terrain layers and "
+    "filter ethnoreligious / cultural feature layers."
 )
 
-# 2. COLOR PICKERS
-st.sidebar.write("### Chart Colors")
-col1, col2 = st.sidebar.columns(2)
-color1 = col1.color_picker('2002', "#86BFE0")
-color2 = col2.color_picker('2022', "#C66762")
+# -------------------------
+# 1) Your AGOL layers
+# -------------------------
 
-# --- DATA LOADING ---
+TILE_LAYERS = {
+    "None": None,
+    "African Great Lakes – Defensive Military Geography": 
+        "https://tiles.arcgis.com/tiles/UN2BoTelitQIJWcd/arcgis/rest/services/African_Great_Lakes_Defensive_Military_Geography/MapServer",
+    "Western Balkans – Predictive Military Geography": 
+        "https://tiles.arcgis.com/tiles/UN2BoTelitQIJWcd/arcgis/rest/services/Predictive_Military_Geography_of_the_ex_Yugoslavia_and_Western_Balkans_WTL1/MapServer",
+}
+
+GREG_URL = (
+    "https://services7.arcgis.com/iEMmryaM5E3wkdnU/arcgis/rest/services/"
+    "GREG_Geo_referencing_of_Ethnic_Groups_/FeatureServer/0"
+)
+
+HERETICS_URL = (
+    "https://services8.arcgis.com/UN2BoTelitQIJWcd/arcgis/rest/services/"
+    "Heretics_Southern_Europe/FeatureServer/0"
+)
+
+# Your actual filter fields
+GREG_FIELD = "G1SHORTNAM"
+HERETICS_FIELD = "MERGE_SRC"
+
+
+# -------------------------
+# Helper functions
+# -------------------------
+
 @st.cache_data
-def load_data():
-    # Load Map Shapes
-    tiger_url = "https://www2.census.gov/geo/tiger/TIGER2023/COUNTY/tl_2023_us_county.zip"
-    try:
-        r = requests.get(tiger_url)
-        z = zipfile.ZipFile(BytesIO(r.content))
-        z.extractall("/tmp/tiger_counties")
-        gdf = gpd.read_file("/tmp/tiger_counties/tl_2023_us_county.shp")
-        gdf['GEOID'] = gdf['GEOID'].astype(str).str.zfill(5)
-        gdf = gdf.to_crs(epsg=4326)
-    except:
-        return gpd.GeoDataFrame(), pd.DataFrame()
+def fetch_geojson(feature_url: str):
+    """Download full layer as GeoJSON from AGOL FeatureServer."""
+    query_url = f"{feature_url}/query"
+    params = {
+        "where": "1=1",
+        "outFields": "*",
+        "f": "geojson",
+    }
+    r = requests.get(query_url, params=params)
+    r.raise_for_status()
+    return r.json()
 
-    # Load CSV
-    try:
-        df = pd.read_csv("utah_vegetation_stats.csv")
-        df['STATEFP'] = df['STATEFP'].astype(str).str.zfill(2)
-        df['GEOID'] = df['GEOID'].astype(str).str.zfill(5)
-        
-        # Calculate change columns
-        df['NPP_Change'] = df['NPP_2022'] - df['NPP_2002']
-        df['NDVI_Change'] = df['NDVI_2022'] - df['NDVI_2002']
-        
-        # Create a "State Name" column for the dropdown
-        # We convert the ID (e.g. "49") back to integer to match our dictionary keys
-        df['State_Name'] = df['STATEFP'].astype(int).map(FIPS_MAP)
-        
-        return gdf, df
-    except:
-        return gpd.GeoDataFrame(), pd.DataFrame()
 
-map_data, stats_data = load_data()
+def unique_values(geojson_obj, field):
+    vals = set()
+    for feat in geojson_obj["features"]:
+        val = feat["properties"].get(field)
+        if val not in [None, ""]:
+            vals.add(val)
+    return sorted(vals)
 
-# --- MAIN APP LOGIC ---
 
-if not stats_data.empty and not map_data.empty:
-    
-    # 3. STATE SELECTOR (Now with Names!)
-    # Get list of state names present in the data
-    available_states = sorted(stats_data['State_Name'].dropna().unique())
-    
-    # Set default to "Utah" if available, otherwise first in list
-    default_index = available_states.index("Utah") if "Utah" in available_states else 0
-    
-    selected_state_name = st.sidebar.selectbox(
-        'Select a State', 
-        available_states, 
-        index=default_index
+def filter_geojson(geojson_obj, field, allowed_values):
+    feats = [
+        f for f in geojson_obj["features"]
+        if f["properties"].get(field) in allowed_values
+    ]
+    return {**geojson_obj, "features": feats}
+
+
+# Fetch layers once
+greg_geojson = fetch_geojson(GREG_URL)
+heretics_geojson = fetch_geojson(HERETICS_URL)
+
+greg_values = unique_values(greg_geojson, GREG_FIELD)
+heretics_values = unique_values(heretics_geojson, HERETICS_FIELD)
+
+
+# -------------------------
+# 2) Sidebar controls
+# -------------------------
+
+st.sidebar.header("Layer Controls")
+
+# Tile layer selection
+selected_tile_name = st.sidebar.radio(
+    "Defensive Terrain Tile Layer:",
+    list(TILE_LAYERS.keys()),
+    index=1
+)
+
+tile_opacity = st.sidebar.slider(
+    "Tile Layer Opacity:",
+    0.1, 1.0, 0.8, 0.05
+)
+
+st.sidebar.markdown("---")
+
+# GREG filter
+st.sidebar.subheader("GREG – Ethnic Groups")
+selected_greg = st.sidebar.multiselect(
+    f"Filter by {GREG_FIELD}:",
+    greg_values,
+    default=greg_values[:10] if len(greg_values) > 10 else greg_values
+)
+
+# Heretics filter
+st.sidebar.subheader("Heretics – Southern Europe")
+selected_heretics = st.sidebar.multiselect(
+    f"Filter by {HERETICS_FIELD}:",
+    heretics_values,
+    default=heretics_values
+)
+
+# -------------------------
+# 3) MAP
+# -------------------------
+
+m = leafmap.Map(center=[30, 10], zoom=2)
+
+# Tile layer
+tile_url = TILE_LAYERS[selected_tile_name]
+if tile_url:
+    m.add_tile_layer(
+        url=tile_url,
+        name=selected_tile_name,
+        opacity=tile_opacity,
+        attribution="ArcGIS Online"
     )
 
-    # Filter data by the Name instead of the ID
-    state_stats = stats_data[stats_data['State_Name'] == selected_state_name]
-    # Get the ID for the map filter
-    selected_state_id = state_stats['STATEFP'].iloc[0]
-    state_map = map_data[map_data['STATEFP'] == selected_state_id]
-    
-    # Merge
-    final_data = state_map.merge(state_stats, on='GEOID', how='inner')
+# Filter + add GREG
+if selected_greg:
+    greg_filtered = filter_geojson(greg_geojson, GREG_FIELD, selected_greg)
+    m.add_geojson(greg_filtered, layer_name="GREG (filtered)")
 
-    # Configure columns based on metric selection
-    if "NPP" in metric_type:
-        c1, c2, c_change = 'NPP_2002', 'NPP_2022', 'NPP_Change'
-        ylabel = "NPP (Kilo Tonnes)"
-    else:
-        c1, c2, c_change = 'NDVI_2002', 'NDVI_2022', 'NDVI_Change'
-        ylabel = "NDVI Value"
+# Filter + add Heretics
+if selected_heretics:
+    heretics_filtered = filter_geojson(heretics_geojson, HERETICS_FIELD, selected_heretics)
+    m.add_geojson(heretics_filtered, layer_name="Heretics (filtered)")
 
-    # --- TABS FOR VISUALIZATION ---
-    tab1, tab2 = st.tabs(["🗺️ Map View", "📊 Chart View"])
+# Adjust view
+m.zoom_to_layers()
 
-    with tab1:
-        st.subheader(f"{selected_state_name}: {metric_type} Change")
-        try:
-            m = leafmap.Map(draw_control=False, measure_control=False, fullscreen_control=False)
-            m.add_basemap('CartoDB.Positron')
-            m.add_data(
-                final_data,
-                column=c_change,
-                scheme="Quantiles",
-                cmap="RdYlGn",
-                layer_name="Change",
-                info_mode="on_click"
-            )
-            m.to_streamlit(height=550)
-        except Exception as e:
-            st.error(f"Map Error: {e}")
+# Render
+m.to_streamlit(height=700)
 
-    with tab2:
-        st.subheader(f"County Comparison: 2002 vs 2022")
-        fig, ax = plt.subplots(figsize=(10, 5))
-        
-        # Sort by county name
-        chart_df = state_stats.sort_values('NAME')
-        
-        chart_df.plot(
-            kind='bar',
-            ax=ax,
-            x='NAME',
-            y=[c1, c2],
-            color=[color1, color2],
-            width=0.8
-        )
-        ax.set_ylabel(ylabel)
-        ax.set_xticklabels(chart_df['NAME'], rotation=90)
-        st.pyplot(fig)
-
-else:
-    st.error("Data failed to load. Please check CSV file in GitHub.")
+st.caption(
+    "Tile layers = your predictive/defensive military geography from ArcGIS Online. "
+    "Use the filters to explore how ethnic and heretical groups in different historical periods "
+    "map onto defensible terrain."
+)
