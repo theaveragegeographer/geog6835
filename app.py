@@ -22,18 +22,14 @@ TILE_LAYERS = {
     "None": None,
     "African Great Lakes – Defensive Military Geography": (
         "https://tiles.arcgis.com/tiles/UN2BoTelitQIJWcd/arcgis/rest/services/"
-        "African_Great_Lakes_Defensive_Military_Geography/MapServer"
+        "African_Great_Lakes_Defensive_Military_Geography/MapServer/tile/{z}/{y}/{x}"
     ),
     "Western Balkans – Predictive Military Geography": (
         "https://tiles.arcgis.com/tiles/UN2BoTelitQIJWcd/arcgis/rest/services/"
-        "Predictive_Military_Geography_of_the_ex_Yugoslavia_and_Western_Balkans_WTL1/MapServer"
+        "Predictive_Military_Geography_of_the_ex_Yugoslavia_and_Western_Balkans_WTL1/MapServer/tile/{z}/{y}/{x}"
     ),
 }
 
-GREG_URL = (
-    "https://services7.arcgis.com/iEMmryaM5E3wkdnU/arcgis/rest/services/"
-    "GREG_Geo_referencing_of_Ethnic_Groups_/FeatureServer/0"
-)
 
 GREG_FIELD = "G1SHORTNAM"  # field to filter on
 
