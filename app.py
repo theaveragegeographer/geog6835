@@ -1,6 +1,7 @@
 import streamlit as st
 import leafmap.foliumap as leafmap
 import requests
+import pandas as pd
 
 # -------------------------
 # Page config
@@ -10,9 +11,18 @@ st.set_page_config(layout="wide", page_title="Geopolitics Dashboard")
 st.title("Geopolitics, Ethnic Groups, and Military Geography")
 
 st.markdown(
-    "Use the controls on the left to toggle defensive terrain layers and "
-    "filter ethnoreligious / cultural feature layers (GREG)."
+    """
+    This dashboard lets you explore how ethnic groups (from the GREG dataset) 
+    overlap with defensible terrain in two case-study regions.
+
+    1. Use the **Defensive Terrain Tile Layer** radio buttons on the left to switch regions.
+    2. Adjust the **opacity slider** to fade the defensibility raster in and out.
+    3. Use the **GREG multiselect** to focus on specific groups (e.g., Serbs, Croats, Bandruanda).
+    4. Scroll down to see a **bar chart** summarizing how many polygons each selected group has.
+
+    """
 )
+
 
 # -------------------------
 # 1) AGOL layers
@@ -121,7 +131,42 @@ if greg_values:
 else:
     st.sidebar.warning("Could not load GREG groups.")
     selected_greg = []
+# Data limitation note
+st.sidebar.info(
+    "Note: GREG polygons represent ethnic *presence*, not just homelands. "
+    "Groups may appear outside their core region (e.g., Serb enclaves in Hungary)."
+)
 
+# -------------------------
+# 6) Simple statistics panel
+# -------------------------
+
+st.markdown("### Summary statistics for selected groups")
+
+if selected_greg and greg_filtered["features"]:
+    # Count features by group name
+    rows = []
+    for f in greg_filtered["features"]:
+        props = f.get("properties", {})
+        group = props.get(GREG_FIELD, "Unknown")
+        rows.append(group)
+
+    df_counts = (
+        pd.Series(rows, name="Group")
+        .value_counts()
+        .rename_axis("Group")
+        .reset_index(name="Feature count")
+    )
+
+    st.markdown(
+        "The bar chart below shows how many GREG polygons are in the current map "
+        "for each selected group. This gives a quick sense of how widely each "
+        "group is distributed in the region."
+    )
+
+    st.bar_chart(df_counts.set_index("Group")["Feature count"])
+else:
+    st.info("Select at least one group in the sidebar to see summary statistics.")
 
 # -------------------------
 # 5) Map
